@@ -73,11 +73,9 @@ class ImplicitGenerator3d(nn.Module):
         输出：rgb aplha [batch_size, num_rays*num_steps, 4]
         """
         # input siren
-        coarse_output_film, coarse_output = self.siren(transformed_points, z, ray_directions=transformed_ray_directions_expanded) # -> siren.py TALLSIREN forward
+        coarse_output = self.siren(transformed_points, z, ray_directions=transformed_ray_directions_expanded) # -> siren.py TALLSIREN forward
         # Change start 
-        coarse_output_film = coarse_output_film.reshape(batch_size, img_size * img_size, num_steps, 4)
         coarse_output = coarse_output.reshape(batch_size, img_size * img_size, num_steps, 4) # [batch_size, num_rays, num_steps, 4] 每条光线上的每个采样点
-        logging.info(f"generators forward coarse_output.shape: {coarse_output.shape}")
 
         # Re-sample fine points alont camera rays, as described in NeRF
         if hierarchical_sample: # 半球采样
@@ -85,13 +83,9 @@ class ImplicitGenerator3d(nn.Module):
                 transformed_points = transformed_points.reshape(batch_size, img_size * img_size, num_steps, 3) # 每个光线上的每个采样点
                 logging.info(f"generators forward transformed_points_reshape.shape: {transformed_points.shape}")
                 # 从 fancy_integration 中获取 weights 权重 用来进行重要性采样（精细采样） 
-                _, _, weights_film = fancy_integration(coarse_output_film, z_vals, device=self.device, clamp_mode=kwargs['clamp_mode'], 
-                                                  noise_std=kwargs['nerf_noise'])
-                
+
                 _, _, weights = fancy_integration(coarse_output, z_vals, device=self.device, clamp_mode=kwargs['clamp_mode'], 
                                                   noise_std=kwargs['nerf_noise'])
-                
-                weights_film = weights_film.reshape(batch_size * img_size * img_size, num_steps) + 1e-5
 
                 weights = weights.reshape(batch_size * img_size * img_size, num_steps) + 1e-5
 
@@ -100,25 +94,18 @@ class ImplicitGenerator3d(nn.Module):
                 z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:])
                 z_vals = z_vals.reshape(batch_size, img_size * img_size, num_steps, 1)
 
-                fine_z_vals_film = sample_pdf(z_vals_mid, weights_film[:, 1:-1],
-                    num_steps, det=False).detach()
                 
                 fine_z_vals = sample_pdf(z_vals_mid, weights[:, 1:-1],
                                  num_steps, det=False).detach()
-                
-                fine_z_vals_film = fine_z_vals_film.reshape(batch_size, img_size * img_size, num_steps, 1)
 
                 fine_z_vals = fine_z_vals.reshape(batch_size, img_size * img_size, num_steps, 1)
 
                 # fine_points.shape [batch_size, num_rays, num_steps, 3]
-                fine_points_film = transformed_ray_origins.unsqueeze(2).contiguous() + \
-                    transformed_ray_directions.unsqueeze(2).contiguous() * fine_z_vals_film.expand(-1,-1,-1,3).contiguous()
 
                 fine_points = transformed_ray_origins.unsqueeze(2).contiguous() + \
                     transformed_ray_directions.unsqueeze(2).contiguous() * fine_z_vals.expand(-1,-1,-1,3).contiguous()
                 # 精细网络 采样点
                 
-                fine_points_film = fine_points_film.reshape(batch_size, img_size*img_size*num_steps, 3)
 
                 fine_points = fine_points.reshape(batch_size, img_size*img_size*num_steps, 3) # [batch_size, num_rays*num_steps, 3]
                 
@@ -133,32 +120,20 @@ class ImplicitGenerator3d(nn.Module):
             输入：fine_points [batch_size, num_rays*num_steps, 3], z [batch_size, 246], ray_directions [batch_size, num_rays*num_steps, 3]
             输出：fine_output [batch_size, num_rays, nums_steps, 4](rgb aplha)
             """
-            fine_output_film, fine_output = self.siren(fine_points, z, ray_directions=transformed_ray_directions_expanded)
+            fine_output = self.siren(fine_points, z, ray_directions=transformed_ray_directions_expanded)
 
-            fine_output_film = fine_output_film.reshape(batch_size, img_size * img_size, num_steps, 4)
             fine_output = fine_output.reshape(batch_size, img_size * img_size, num_steps, 4) # [batch_size, num_rays, num_steps, 4]
 
-            logging.info(f"generators forward fine_output.shape: {fine_output.shape}")
             # Combine course and fine points 组合粗糙采样和精细采样
             # 最终输出： all_z_vals all_outputs
 
-            all_outputs_film = torch.cat([fine_output_film, coarse_output_film], dim = -2) # [batch_size, num_rays, num_steps*2, 4]
             all_outputs = torch.cat([fine_output, coarse_output], dim = -2) # [batch_size, num_rays, num_steps*2, 4]
-            logging.info(f"generators forward all_outputs.shape: {all_outputs.shape}")
 
-            all_z_vals_film = torch.cat([fine_z_vals_film, z_vals], dim = -2) # [batch_size, num_rays, num_steps*2, 1]
             all_z_vals = torch.cat([fine_z_vals, z_vals], dim = -2) # [batch_size, num_rays, num_steps*2, 1]
-            
-            _, indices_film = torch.sort(all_z_vals_film, dim=-2)
             _, indices = torch.sort(all_z_vals, dim=-2)
-
-            all_z_vals_film = torch.gather(all_z_vals_film, -2, indices_film) # [batch_size, num_rays, num_steps*2, 1]
             all_z_vals = torch.gather(all_z_vals, -2, indices) # [batch_size, num_rays, num_steps*2, 1]
-
-            all_outputs_film = torch.gather(all_outputs_film, -2, indices_film.expand(-1, -1, -1, 4)) # [batch_size, num_rays, num_steps*2, 4]
             all_outputs = torch.gather(all_outputs, -2, indices.expand(-1, -1, -1, 4)) # [batch_size, num_rays, num_steps*2, 4]
         else:
-            all_outputs_film = coarse_output_film
             all_outputs = coarse_output
 
             all_z_vals_film = z_vals
@@ -168,23 +143,14 @@ class ImplicitGenerator3d(nn.Module):
         # Create images with NeRF 
         # 使用 NeRF 创建图像
         # 输出：rgb [batch_size, num_rays, 3], depth [batch_size, num_rays, 1], weight [batch_size, num_rays, num_stpes*2 1]
-        pixels_film, depth_film, weights_film = fancy_integration(all_outputs_film, all_z_vals_film, device=self.device, 
-                                                   white_back=kwargs.get('white_back', False), last_back=kwargs.get('last_back', False), 
-                                                   clamp_mode=kwargs['clamp_mode'], noise_std=kwargs['nerf_noise'])
-
         pixels, depth, weights = fancy_integration(all_outputs, all_z_vals, device=self.device, 
                                                    white_back=kwargs.get('white_back', False), last_back=kwargs.get('last_back', False), 
                                                    clamp_mode=kwargs['clamp_mode'], noise_std=kwargs['nerf_noise'])
         #  还原 pixels.shape: [batch_size, img_size, img_size, 3]
-        pixels_film = pixels_film.reshape((batch_size, img_size, img_size, 3))
-        pixels_film = pixels_film.permute(0, 3, 1, 2).contiguous() * 2 - 1 # 交换维度 [batch_size, 3, img_size, img_size]
-        
         pixels = pixels.reshape((batch_size, img_size, img_size, 3))
         pixels = pixels.permute(0, 3, 1, 2).contiguous() * 2 - 1 # 交换维度 [batch_size, 3, img_size, img_size]
-
-        logging.info(f"generators forward pixels.shape: {pixels.shape}")
         # pixels.shape: [batch_size, 3, img_size, img_size] pitch.shape: [batch_size, 1] yaw.shape: [batch_size, 1]
-        return pixels_film, pixels, torch.cat([pitch, yaw], -1)
+        return pixels, torch.cat([pitch, yaw], -1)
 
 
     def generate_avg_frequencies(self):
