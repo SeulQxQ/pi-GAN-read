@@ -361,9 +361,6 @@ class TALLSIREN(nn.Module):
             x = layer(x, frequencies[..., start:end], phase_shifts[..., start:end])
             
         # rbg_film = torch.cat([x, shared_features], dim=-1)
-        sigma_film = self.final_layer(x)
-        rbg_film = self.color_layer_sine[0](torch.cat([x, shared_features, ray_directions], dim=-1))
-        rbg_film = self.color_layer_linear(rbg_film)
 
         # for index, layer in enumerate(self.network): # 8层隐藏层的计算
         #     # layer == FiLMLayer(i)   FiLM SIREN sin(γx + β)
@@ -401,7 +398,7 @@ class TALLSIREN(nn.Module):
         rbg = self.color_layer_linear(rbg)
 
         # 生成图片的时候需要将 alpha 和 rgb 拼接在一起 然后输入到volume rendering中渲染
-        return torch.cat([rbg_film, sigma_film]), torch.cat([rbg, sigma], dim=-1) # return [batch_size, num_rays*num_steps, 4] rgb + alpha
+        return torch.cat([rbg, sigma], dim=-1) # return [batch_size, num_rays*num_steps, 4] rgb + alpha
 # CHNAEG end
 
 
