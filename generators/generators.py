@@ -121,6 +121,7 @@ class ImplicitGenerator3d(nn.Module):
             输入：fine_points [batch_size, num_rays*num_steps, 3], z [batch_size, 246], ray_directions [batch_size, num_rays*num_steps, 3]
             输出：fine_output [batch_size, num_rays, nums_steps, 4](rgb aplha)
             """
+            # fine_output: [batch_size, num_rays*num_steps, 4] rgb + alpha
             fine_output = self.siren(fine_points, z, ray_directions=transformed_ray_directions_expanded)
 
             fine_output = fine_output.reshape(batch_size, img_size * img_size, num_steps, 4) # [batch_size, num_rays, num_steps, 4]
