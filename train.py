@@ -259,13 +259,11 @@ def train(rank, world_size, opt):
                         subset_z = z[split * split_batch_size:(split+1) * split_batch_size] # subset_z [3, 256]
 
                         # g_imgs --> pixels [batch_split, 3(RGB), img_size, img_size], g_pos -> torch.cat([pitch, yaw], -1) [batch_size, 2]
-                        g_imgs_film, g_imgs, g_pos = generator_ddp(subset_z, **metadata) # --> generator.py --> ImplicitGenerator3d --> forward()
+                        g_imgs, g_pos = generator_ddp(subset_z, **metadata) # --> generator.py --> ImplicitGenerator3d --> forward()
 
-                        gen_imgs_film.append(g_imgs_film)
                         gen_imgs.append(g_imgs)
                         gen_positions.append(g_pos)
                    
-                    gen_imgs_film = torch.cat(gen_imgs_film, axis=0) # [9, 3, 32, 32] [batch_size, channels, img_size, img_size]
                     gen_imgs = torch.cat(gen_imgs, axis=0)  # [9, 3, 32, 32] [batch_size, channels, img_size, img_size]
                     gen_positions = torch.cat(gen_positions, axis=0) # [9, 2] [batch_size, 2]
 
@@ -293,25 +291,19 @@ def train(rank, world_size, opt):
                 
                 # 生成器生成的图像 gen_imgs
                 # gen_img_prediction [batch_size, 1], latent [batch_size, 256], position [batch_size, 2]
-                g_preds_film, g_pred_latent_film, g_pred_position_film = discriminator_ddp(gen_imgs_film, alpha, **metadata) 
                 g_preds, g_pred_latent, g_pred_position = discriminator_ddp(gen_imgs, alpha, **metadata) 
                 # 生成图像 梯度惩罚
                 if metadata['z_lambda'] > 0 or metadata['pos_lambda'] > 0:
-                    latent_penalty_film = torch.nn.MSELoss()(g_pred_latent_film, z) * metadata['z_lambda']    # latent code惩罚
-                    position_penalty_film = torch.nn.MSELoss()(g_pred_position_film, gen_positions) * metadata['pos_lambda'] # 位置信息惩罚
 
                     latent_penalty = torch.nn.MSELoss()(g_pred_latent, z) * metadata['z_lambda']    # latent code惩罚
                     position_penalty = torch.nn.MSELoss()(g_pred_position, gen_positions) * metadata['pos_lambda'] # 位置信息惩罚
-                    
-                    identity_penalty_film = latent_penalty_film + position_penalty_film
                     identity_penalty = latent_penalty + position_penalty    
                 else:
-                    identity_penalty_film=0
                     identity_penalty=0
 
                 # g_preds: 生成图像的预测结果 r_preds: 真实图像的预测结果
-                d_loss = torch.nn.functional.softplus(g_preds).mean() +  torch.nn.functional.softplus(g_preds_film).mean() +\
-                         torch.nn.functional.softplus(-r_preds).mean() + grad_penalty + identity_penalty + identity_penalty_film
+                d_loss = torch.nn.functional.softplus(g_preds).mean() + \
+                         torch.nn.functional.softplus(-r_preds).mean() + grad_penalty + identity_penalty
                 discriminator_losses.append(d_loss.item())
 
             optimizer_D.zero_grad()
