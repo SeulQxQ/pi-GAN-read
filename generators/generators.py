@@ -73,6 +73,7 @@ class ImplicitGenerator3d(nn.Module):
         输出：rgb aplha [batch_size, num_rays*num_steps, 4]
         """
         # input siren
+        # coarse_output: [batch_size, num_rays*num_steps, 4] rgb + alpha
         coarse_output = self.siren(transformed_points, z, ray_directions=transformed_ray_directions_expanded) # -> siren.py TALLSIREN forward
         # Change start 
         coarse_output = coarse_output.reshape(batch_size, img_size * img_size, num_steps, 4) # [batch_size, num_rays, num_steps, 4] 每条光线上的每个采样点
